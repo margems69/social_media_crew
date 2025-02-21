@@ -5,8 +5,11 @@ from datetime import datetime, timedelta
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# OpenRouter API Configuration
-OPENROUTER_API_KEY = "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"
+# Initialize session state for API key if not exists
+if 'openrouter_api_key' not in st.session_state:
+    st.session_state.openrouter_api_key = ""
+
+# Default OpenRouter API URL
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Initialize Streamlit configuration
@@ -21,11 +24,28 @@ available_models = {
     "GPT-4 Turbo": "openai/gpt-4-turbo-preview",
     "Llama 2 70B": "meta-llama/llama-2-70b-chat",
     "Mixtral 8x7B": "mistralai/mixtral-8x7b",
+    "Deepseek R1 Distil": "deepseek-ai/deepseek-llm-7b-chat"
 }
 
-# Sidebar configuration
+# Sidebar configuration with API key input
 with st.sidebar:
     st.header("⚙️ Settings")
+    
+    # API Key configuration section
+    st.subheader("API Configuration")
+    api_key_input = st.text_input(
+        "OpenRouter API Key",
+        value=st.session_state.openrouter_api_key,
+        type="password",
+        help="Enter your OpenRouter API key. Get one at https://openrouter.ai/keys"
+    )
+    
+    # Save API key to session state when changed
+    if api_key_input != st.session_state.openrouter_api_key:
+        st.session_state.openrouter_api_key = api_key_input
+    
+    # Model and content settings
+    st.subheader("Content Settings")
     selected_model = st.selectbox(
         "Select Model",
         list(available_models.keys()),
@@ -48,10 +68,13 @@ with st.sidebar:
 
 def call_openrouter_api(messages, model_name):
     """Make API call to OpenRouter."""
+    if not st.session_state.openrouter_api_key:
+        raise Exception("Please enter your OpenRouter API key in the sidebar settings.")
+        
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "HTTP-Referer": "https://localhost:8501",  # Required by OpenRouter
-        "X-Title": "Social Media Content Generator",  # Optional but recommended
+        "Authorization": f"Bearer {st.session_state.openrouter_api_key}",
+        "HTTP-Referer": "https://localhost:8501",
+        "X-Title": "Social Media Content Generator",
         "Content-Type": "application/json"
     }
     
@@ -62,31 +85,19 @@ def call_openrouter_api(messages, model_name):
         "max_tokens": 2000
     }
     
-    response = None
     try:
         response = requests.post(OPENROUTER_API_URL, headers=headers, json=data)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.HTTPError as e:
-        error_msg = ""
-        if response is not None:
-            if response.status_code == 401:
-                error_msg = "API key authentication failed. Please check your API key."
-            elif response.status_code == 404:
-                error_msg = "Invalid API endpoint. Please check the API URL."
-            else:
-                try:
-                    error_data = response.json()
-                    error_msg = f"API error: {error_data.get('error', {}).get('message', str(e))}"
-                except:
-                    error_msg = f"HTTP error occurred: {str(e)}"
-        else:
-            error_msg = f"Failed to get response from API: {str(e)}"
-        raise Exception(error_msg)
     except requests.exceptions.RequestException as e:
-        raise Exception(f"Request failed: {str(e)}")
-    except Exception as e:
-        raise Exception(f"Unexpected error: {str(e)}")
+        error_msg = f"API error: {str(e)}"
+        if hasattr(e.response, 'json'):
+            try:
+                error_data = e.response.json()
+                error_msg = f"API error: {error_data.get('error', {}).get('message', str(e))}"
+            except:
+                pass
+        raise Exception(error_msg)
 
 def generate_content(prompt, platform, num_posts, model_name):
     """Generate social media content using OpenRouter API."""
@@ -129,7 +140,6 @@ def create_csv(posts):
     """Convert posts to CSV format."""
     csv_content = "Date,Time,Content,Hashtags,Type\n"
     for post in posts:
-        # Escape any commas in the content
         content = post['content'].replace(',', '\\,')
         hashtags = ' '.join(post['hashtags'])
         csv_content += f"{post['date']},{post['time']},{content},{hashtags},{post['type']}\n"
@@ -137,32 +147,35 @@ def create_csv(posts):
 
 # Main application logic
 if st.button("Generate Content"):
-    with st.spinner("Generating content..."):
-        try:
-            # Generate content
-            posts = generate_content(custom_prompt, platform, num_posts, selected_model)
-            
-            if posts:
-                st.success("Content generated successfully!")
+    if not st.session_state.openrouter_api_key:
+        st.error("Please enter your OpenRouter API key in the sidebar settings.")
+    else:
+        with st.spinner("Generating content..."):
+            try:
+                # Generate content
+                posts = generate_content(custom_prompt, platform, num_posts, selected_model)
                 
-                # Display generated posts
-                st.subheader("Generated Posts")
-                for post in posts:
-                    with st.expander(f"Post for {post['date']}"):
-                        st.write("**Content:**")
-                        st.write(post['content'])
-                        st.write("**Best Time to Post:**", post['time'])
-                        st.write("**Hashtags:**", ' '.join(post['hashtags']))
-                        st.write("**Content Type:**", post['type'])
-                
-                # Create and offer CSV download
-                csv_data = create_csv(posts)
-                st.download_button(
-                    label="Download Content Schedule (CSV)",
-                    data=csv_data,
-                    file_name=f"social_media_content_{platform.lower()}.csv",
-                    mime="text/csv"
-                )
-                
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
+                if posts:
+                    st.success("Content generated successfully!")
+                    
+                    # Display generated posts
+                    st.subheader("Generated Posts")
+                    for post in posts:
+                        with st.expander(f"Post for {post['date']}"):
+                            st.write("**Content:**")
+                            st.write(post['content'])
+                            st.write("**Best Time to Post:**", post['time'])
+                            st.write("**Hashtags:**", ' '.join(post['hashtags']))
+                            st.write("**Content Type:**", post['type'])
+                    
+                    # Create and offer CSV download
+                    csv_data = create_csv(posts)
+                    st.download_button(
+                        label="Download Content Schedule (CSV)",
+                        data=csv_data,
+                        file_name=f"social_media_content_{platform.lower()}.csv",
+                        mime="text/csv"
+                    )
+                    
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
