@@ -2,7 +2,6 @@ import os
 import json
 import streamlit as st
 from datetime import datetime, timedelta
-from crewai import Agent, Task, Crew, Process
 import openai
 from PIL import Image, ImageDraw, ImageFont
 
@@ -12,7 +11,7 @@ openai.api_key = "your-api-key-here"
 # Initialize Streamlit configuration
 st.set_page_config(page_title="Social Media Content Generator", page_icon="📅", layout="wide")
 st.title("📅 Social Media Content Generator")
-st.markdown("Generate engaging social media content through a multi-agent pipeline.")
+st.markdown("Generate engaging social media content for your platform.")
 
 # Sidebar configuration
 with st.sidebar:
@@ -20,100 +19,68 @@ with st.sidebar:
     custom_prompt = st.text_area(
         "Custom Prompt",
         value="Create engaging social media posts for a tech startup.",
-        help="Customize the prompt for the AI agent."
+        help="Customize the prompt for content generation."
+    )
+    platform = st.selectbox(
+        "Platform",
+        ["LinkedIn", "Twitter", "Instagram", "Facebook"],
+        help="Select the target social media platform"
     )
     border_color = st.color_picker("Border Color", "#FF5733")
-    overlay_color = st.color_picker("Overlay Color", "#00000080")
+    background_color = st.color_picker("Background Color", "#000000")
+    background_opacity = st.slider("Background Opacity", 0.0, 1.0, 0.5)
     num_posts = st.slider("Number of Posts", 1, 14, 7)
 
-class SocialMediaCrew:
-    def __init__(self):
-        # Simple OpenAI wrapper class
-        class SimpleGPT:
-            def invoke(self, prompt):
-                response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7
-                )
-                return response.choices[0].message.content
-
-        self.llm = SimpleGPT()
-        self.agents = None
-        self.tasks = None
-
-    def create_agents(self):
-        return [
-            Agent(
-                role='Research Specialist',
-                goal='Conduct comprehensive research on social media trends and analysis.',
-                backstory="A detail-oriented researcher with expertise in social media analytics.",
-                verbose=True,
-                llm=self.llm
-            ),
-            Agent(
-                role='Content Writer',
-                goal='Craft engaging social media posts based on research insights.',
-                backstory="An experienced writer specializing in social media content.",
-                verbose=True,
-                llm=self.llm
-            ),
-            Agent(
-                role='Hashtag Generator',
-                goal='Generate trending and relevant hashtags for social platforms.',
-                backstory="An expert in social media trends and hashtag optimization.",
-                verbose=True,
-                llm=self.llm
-            ),
-            Agent(
-                role='QA Specialist',
-                goal='Review and finalize the content for quality and consistency.',
-                backstory="A meticulous QA professional with content verification expertise.",
-                verbose=True,
-                llm=self.llm
-            )
-        ]
-
-    def create_tasks(self, custom_prompt, num_posts):
-        dates = [datetime.now() + timedelta(days=i) for i in range(num_posts)]
-        date_strings = [d.strftime('%Y-%m-%d') for d in dates]
-        
-        tasks = [
-            Task(
-                description=f"Research {num_posts}-day social media strategy. Prompt: {custom_prompt}",
-                agent=self.agents[0],
-                expected_output="Research report with insights"
-            ),
-            Task(
-                description=f"Create {num_posts} posts for dates: {date_strings}. Prompt: {custom_prompt}",
-                agent=self.agents[1],
-                expected_output="JSON array of posts"
-            ),
-            Task(
-                description=f"Generate hashtags for posts. Prompt: {custom_prompt}",
-                agent=self.agents[2],
-                expected_output="List of hashtags"
-            ),
-            Task(
-                description=f"Review and create final CSV. Prompt: {custom_prompt}",
-                agent=self.agents[3],
-                expected_output="CSV data string"
-            )
-        ]
-        return tasks
-
-    def run(self, custom_prompt, num_posts):
-        self.agents = self.create_agents()
-        self.tasks = self.create_tasks(custom_prompt, num_posts)
-        
-        crew = Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            verbose=2,
-            process=Process.sequential
+def generate_content(prompt, platform, num_posts):
+    """Generate social media content using OpenAI."""
+    dates = [datetime.now() + timedelta(days=i) for i in range(num_posts)]
+    date_strings = [d.strftime('%Y-%m-%d') for d in dates]
+    
+    system_prompt = f"""You are a professional social media content creator. 
+    Create {num_posts} engaging {platform} posts based on this prompt: {prompt}
+    
+    For each post, provide:
+    1. Post content (appropriate length for {platform})
+    2. Best posting time
+    3. 3-5 relevant hashtags
+    4. Type of content (text, image, video, poll, etc.)
+    
+    Format the response as JSON with the following structure for each post:
+    {{
+        "date": "YYYY-MM-DD",
+        "content": "post content",
+        "time": "HH:MM",
+        "hashtags": ["tag1", "tag2", "tag3"],
+        "type": "content type"
+    }}
+    """
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
         )
         
-        return crew.kickoff()
+        # Parse the response and ensure it's valid JSON
+        content = response.choices[0].message.content
+        return json.loads(content)
+    except Exception as e:
+        st.error(f"Error generating content: {str(e)}")
+        return None
+
+def create_csv(posts):
+    """Convert posts to CSV format."""
+    csv_content = "Date,Time,Content,Hashtags,Type\n"
+    for post in posts:
+        # Escape any commas in the content
+        content = post['content'].replace(',', '\\,')
+        hashtags = ' '.join(post['hashtags'])
+        csv_content += f"{post['date']},{post['time']},{content},{hashtags},{post['type']}\n"
+    return csv_content
 
 # Main application logic
 if st.button("Generate Content"):
@@ -122,39 +89,30 @@ if st.button("Generate Content"):
     else:
         with st.spinner("Generating content..."):
             try:
-                social_media_crew = SocialMediaCrew()
-                result = social_media_crew.run(custom_prompt, num_posts)
+                # Generate content
+                posts = generate_content(custom_prompt, platform, num_posts)
                 
-                st.success("Content generated successfully!")
-                st.subheader("Generated Content")
-                
-                # Display results
-                research_output = result.get("Research Specialist", "No research report generated.")
-                writer_output = result.get("Content Writer", "No content generated.")
-                hashtag_output = result.get("Hashtag Generator", "No hashtags generated.")
-                final_csv = result.get("QA Specialist", "")
-                
-                st.markdown("### Research Report")
-                st.write(research_output)
-                st.divider()
-                
-                st.markdown("### Generated Social Media Posts")
-                st.write(writer_output)
-                st.divider()
-                
-                st.markdown("### Generated Hashtags")
-                st.write(hashtag_output)
-                st.divider()
-                
-                if final_csv:
-                    st.markdown("### Finalized Content Spreadsheet (CSV)")
+                if posts:
+                    st.success("Content generated successfully!")
+                    
+                    # Display generated posts
+                    st.subheader("Generated Posts")
+                    for post in posts:
+                        with st.expander(f"Post for {post['date']}"):
+                            st.write("**Content:**")
+                            st.write(post['content'])
+                            st.write("**Best Time to Post:**", post['time'])
+                            st.write("**Hashtags:**", ' '.join(post['hashtags']))
+                            st.write("**Content Type:**", post['type'])
+                    
+                    # Create and offer CSV download
+                    csv_data = create_csv(posts)
                     st.download_button(
-                        label="Download Spreadsheet (CSV)",
-                        data=final_csv,
-                        file_name="social_media_content.csv",
+                        label="Download Content Schedule (CSV)",
+                        data=csv_data,
+                        file_name=f"social_media_content_{platform.lower()}.csv",
                         mime="text/csv"
                     )
-                else:
-                    st.write("No final spreadsheet generated.")
+                    
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
