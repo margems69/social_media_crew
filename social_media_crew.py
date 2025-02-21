@@ -5,17 +5,19 @@ from datetime import datetime, timedelta
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# Helper functions defined at the top
+# Initialize constants
+OPENROUTER_API_KEY = "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"  # Your API key
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Helper functions
 def call_openrouter_api(messages, model_name):
     """Make API call to OpenRouter."""
-    if not st.session_state.openrouter_api_key:
-        raise Exception("Please enter your OpenRouter API key in the sidebar settings.")
-        
     headers = {
-        "Authorization": f"Bearer {st.session_state.openrouter_api_key}",
-        "HTTP-Referer": "https://localhost:8501",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": "localhost:8501",
         "X-Title": "Social Media Content Generator",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
     
     data = {
@@ -26,17 +28,26 @@ def call_openrouter_api(messages, model_name):
     }
     
     try:
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        response = requests.post(
+            OPENROUTER_API_URL,
+            headers=headers,
+            json=data,
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            print(f"Error response: {response.text}")
+            
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         error_msg = f"API error: {str(e)}"
-        if hasattr(e.response, 'json'):
+        if hasattr(e, 'response') and e.response is not None:
             try:
                 error_data = e.response.json()
                 error_msg = f"API error: {error_data.get('error', {}).get('message', str(e))}"
             except:
-                pass
+                error_msg = f"API error: {e.response.text}"
         raise Exception(error_msg)
 
 def generate_content(prompt, platform, num_posts, model_name):
@@ -85,15 +96,13 @@ def create_csv(posts):
         csv_content += f"{post['date']},{post['time']},{content},{hashtags},{post['type']}\n"
     return csv_content
 
-# Page configuration with custom theme
+# Page configuration
 st.set_page_config(page_title="Social Media Content Generator", page_icon="📅", layout="wide")
 
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
     <style>
-    .main {
-        padding: 2rem;
-    }
+    .main { padding: 2rem; }
     .stButton>button {
         width: 100%;
         height: 3rem;
@@ -102,71 +111,52 @@ st.markdown("""
         background-color: #FF4B4B;
         color: white;
     }
-    .stButton>button:hover {
-        background-color: #FF2B2B;
-    }
-    .success-message {
+    .stButton>button:hover { background-color: #FF2B2B; }
+    .post-card {
+        background-color: white;
         padding: 1rem;
         border-radius: 0.5rem;
-        background-color: #DFF0D8;
-        border: 1px solid #D6E9C6;
-        color: #3C763D;
-        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # Initialize session state
-if 'openrouter_api_key' not in st.session_state:
-    st.session_state.openrouter_api_key = ""
 if 'generated_posts' not in st.session_state:
     st.session_state.generated_posts = None
 
-# Header section with better styling
+# Header
 st.title("📅 Social Media Content Generator")
 st.markdown("""
     <div style='background-color: #f0f2f6; padding: 1rem; border-radius: 0.5rem; margin-bottom: 2rem;'>
-        Generate engaging social media content for your platform using advanced AI models.
+        Generate engaging social media content using AI models
     </div>
 """, unsafe_allow_html=True)
 
-# Available models configuration
+# Available models
 available_models = {
+    "Deepseek R1": "deepseek-ai/deepseek-llm-7b-chat",
     "Claude 3 Opus": "anthropic/claude-3-opus",
-    "Claude 3 Sonnet": "anthropic/claude-3-sonnet",
     "GPT-4 Turbo": "openai/gpt-4-turbo-preview",
-    "Llama 2 70B": "meta-llama/llama-2-70b-chat",
-    "Mixtral 8x7B": "mistralai/mixtral-8x7b",
-    "Deepseek R1": "deepseek-ai/deepseek-llm-7b-chat"
+    "Mixtral 8x7B": "mistralai/mixtral-8x7b"
 }
 
-# Create two columns for main content and settings
-main_col, settings_col = st.columns([2, 1])
+# Layout
+left_col, right_col = st.columns([2, 1])
 
-with settings_col:
+with right_col:
     st.markdown("""
-        <div style='background-color: #ffffff; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
-            <h2 style='color: #333333;'>⚙️ Settings</h2>
+        <div style='background-color: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+            <h3>⚙️ Settings</h3>
         </div>
     """, unsafe_allow_html=True)
     
-    # API Configuration
-    st.subheader("🔑 API Configuration")
-    api_key_input = st.text_input(
-        "OpenRouter API Key",
-        value=st.session_state.openrouter_api_key,
-        type="password",
-        help="Enter your OpenRouter API key"
-    )
-    if api_key_input != st.session_state.openrouter_api_key:
-        st.session_state.openrouter_api_key = api_key_input
-
-    # Model Settings
-    st.subheader("🎯 Content Settings")
+    # Settings
     selected_model = st.selectbox(
         "AI Model",
         list(available_models.keys()),
-        index=list(available_models.keys()).index("Deepseek R1"),
+        index=0,
         help="Choose the AI model to use"
     )
     
@@ -181,96 +171,56 @@ with settings_col:
         min_value=1,
         max_value=14,
         value=7,
-        help="How many posts do you want to generate?"
+        help="How many posts to generate"
     )
 
-    # Visual Settings
-    st.subheader("🎨 Visual Settings")
-    theme_options = {
-        "Professional": ("#0077B5", "#FFFFFF"),
-        "Creative": ("#FF1493", "#FFF0F5"),
-        "Modern": ("#000000", "#F8F9FA"),
-        "Custom": (None, None)
-    }
-    
-    selected_theme = st.selectbox("Theme", list(theme_options.keys()))
-    if selected_theme == "Custom":
-        border_color = st.color_picker("Border Color", "#FF5733")
-        background_color = st.color_picker("Background Color", "#FFFFFF")
-    else:
-        border_color, background_color = theme_options[selected_theme]
-
-with main_col:
+with left_col:
     st.markdown("""
-        <div style='background-color: #ffffff; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
-            <h2 style='color: #333333;'>📝 Content Creation</h2>
+        <div style='background-color: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+            <h3>📝 Content Creation</h3>
         </div>
     """, unsafe_allow_html=True)
     
-    custom_prompt = st.text_area(
+    prompt = st.text_area(
         "What kind of content would you like to generate?",
         value="Create engaging social media posts for a tech startup.",
-        height=100,
-        help="Be specific about your content needs"
+        height=100
     )
     
-    # Generate button with loading state
-    if st.button("🚀 Generate Content", key="generate_button"):
-        if not st.session_state.openrouter_api_key:
-            st.error("⚠️ Please enter your OpenRouter API key in the settings panel")
-        else:
-            with st.spinner("🎨 Generating your social media content..."):
-                try:
-                    posts = generate_content(custom_prompt, platform, num_posts, selected_model)
-                    if posts:
-                        st.session_state.generated_posts = posts
-                        st.success("✨ Content generated successfully!")
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+    if st.button("🚀 Generate Content"):
+        with st.spinner("Generating your social media content..."):
+            try:
+                posts = generate_content(prompt, platform, num_posts, selected_model)
+                if posts:
+                    st.session_state.generated_posts = posts
+                    st.success("✨ Content generated successfully!")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
 
-    # Display generated content if available
+    # Display generated content
     if st.session_state.generated_posts:
-        st.markdown("### 📊 Generated Content")
-        
-        # Create tabs for different views
-        tab1, tab2 = st.tabs(["📱 Post View", "📅 Calendar View"])
+        tab1, tab2 = st.tabs(["📱 Posts", "📅 Calendar"])
         
         with tab1:
             for idx, post in enumerate(st.session_state.generated_posts):
                 with st.container():
                     st.markdown(f"""
-                        <div style='background-color: {background_color}; 
-                             border-left: 5px solid {border_color}; 
-                             padding: 1rem; 
-                             margin: 1rem 0; 
-                             border-radius: 0.5rem;'>
+                        <div class='post-card'>
                             <h4>Post {idx + 1} - {post['date']}</h4>
                             <p><strong>📝 Content:</strong> {post['content']}</p>
-                            <p><strong>⏰ Best Time:</strong> {post['time']}</p>
+                            <p><strong>⏰ Time:</strong> {post['time']}</p>
                             <p><strong>#️⃣ Hashtags:</strong> {' '.join(post['hashtags'])}</p>
                             <p><strong>📊 Type:</strong> {post['type']}</p>
                         </div>
                     """, unsafe_allow_html=True)
         
         with tab2:
-            # Create a calendar view
-            calendar_data = {}
-            for post in st.session_state.generated_posts:
-                date = datetime.strptime(post['date'], '%Y-%m-%d')
-                calendar_data[date] = post
-            
-            # Display calendar grid
-            st.markdown("### 📅 Content Calendar")
             cols = st.columns(7)
             for i, post in enumerate(st.session_state.generated_posts):
                 with cols[i % 7]:
                     st.markdown(f"""
-                        <div style='background-color: {background_color}; 
-                             padding: 0.5rem; 
-                             border-radius: 0.5rem; 
-                             margin-bottom: 0.5rem;'>
-                            <small>{post['date']}</small><br>
-                            <small>{post['time']}</small>
+                        <div style='background-color: white; padding: 0.5rem; border-radius: 0.5rem; margin-bottom: 0.5rem;'>
+                            <small>{post['date']}<br>{post['time']}</small>
                         </div>
                     """, unsafe_allow_html=True)
         
@@ -281,17 +231,17 @@ with main_col:
         with col1:
             csv_data = create_csv(st.session_state.generated_posts)
             st.download_button(
-                label="📊 Download as CSV",
-                data=csv_data,
-                file_name=f"social_media_content_{platform.lower()}.csv",
-                mime="text/csv"
+                "📊 Download CSV",
+                csv_data,
+                f"social_media_content_{platform.lower()}.csv",
+                "text/csv"
             )
         
         with col2:
             json_data = json.dumps(st.session_state.generated_posts, indent=2)
             st.download_button(
-                label="📋 Download as JSON",
-                data=json_data,
-                file_name=f"social_media_content_{platform.lower()}.json",
-                mime="application/json"
+                "📋 Download JSON",
+                json_data,
+                f"social_media_content_{platform.lower()}.json",
+                "application/json"
             )
