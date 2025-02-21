@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# Deepseek API Configuration
-DEEPSEEK_API_KEY = "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"
-DEEPSEEK_API_URL = "https://api.deepseek.ai/v1/chat/completions"
+# Deepinfra API Configuration
+DEEPINFRA_API_KEY = "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"
+DEEPINFRA_API_URL = "https://api.deepinfra.com/v1/openai/chat/completions"
 
 # Initialize Streamlit configuration
 st.set_page_config(page_title="Social Media Content Generator", page_icon="📅", layout="wide")
@@ -32,15 +32,15 @@ with st.sidebar:
     background_opacity = st.slider("Background Opacity", 0.0, 1.0, 0.5)
     num_posts = st.slider("Number of Posts", 1, 14, 7)
 
-def call_deepseek_api(messages):
-    """Make API call to Deepseek."""
+def call_deepinfra_api(messages):
+    """Make API call to Deepinfra."""
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {DEEPINFRA_API_KEY}",
         "Content-Type": "application/json"
     }
     
     data = {
-        "model": "deepseek-chat",
+        "model": "meta-llama/Llama-2-70b-chat-hf",  # Using Llama 2 model
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 2000
@@ -48,7 +48,7 @@ def call_deepseek_api(messages):
     
     response = None
     try:
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
+        response = requests.post(DEEPINFRA_API_URL, headers=headers, json=data)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as e:
@@ -73,7 +73,7 @@ def call_deepseek_api(messages):
         raise Exception(f"Unexpected error: {str(e)}")
 
 def generate_content(prompt, platform, num_posts):
-    """Generate social media content using Deepseek API."""
+    """Generate social media content using Deepinfra API."""
     dates = [datetime.now() + timedelta(days=i) for i in range(num_posts)]
     date_strings = [d.strftime('%Y-%m-%d') for d in dates]
     
@@ -102,7 +102,7 @@ def generate_content(prompt, platform, num_posts):
     ]
     
     try:
-        response = call_deepseek_api(messages)
+        response = call_deepinfra_api(messages)
         content = response['choices'][0]['message']['content']
         return json.loads(content)
     except Exception as e:
