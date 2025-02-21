@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Deepseek API Configuration
 DEEPSEEK_API_KEY = "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"
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_API_URL = "https://api.deepseek.ai/v1/chat/completions"  # Corrected API endpoint
 
 # Initialize Streamlit configuration
 st.set_page_config(page_title="Social Media Content Generator", page_icon="📅", layout="wide")
@@ -40,16 +40,23 @@ def call_deepseek_api(messages):
     }
     
     data = {
-        "model": "deepseek-chat",  # or whichever model you want to use
+        "model": "deepseek-chat",
         "messages": messages,
-        "temperature": 0.7
+        "temperature": 0.7,
+        "max_tokens": 2000
     }
     
-    response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
-    if response.status_code == 200:
+    try:
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
+        response.raise_for_status()  # Raise an exception for bad status codes
         return response.json()
-    else:
-        raise Exception(f"API call failed with status code {response.status_code}: {response.text}")
+    except requests.exceptions.RequestException as e:
+        if response.status_code == 401:
+            raise Exception("API key authentication failed. Please check your API key.")
+        elif response.status_code == 404:
+            raise Exception("Invalid API endpoint. Please check the API URL.")
+        else:
+            raise Exception(f"API call failed: {str(e)}\nResponse: {response.text if response else 'No response'}")
 
 def generate_content(prompt, platform, num_posts):
     """Generate social media content using Deepseek API."""
