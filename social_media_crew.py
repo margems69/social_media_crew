@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Deepseek API Configuration
 DEEPSEEK_API_KEY = "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"
-DEEPSEEK_API_URL = "https://api.deepseek.ai/v1/chat/completions"  # Corrected API endpoint
+DEEPSEEK_API_URL = "https://api.deepseek.ai/v1/chat/completions"
 
 # Initialize Streamlit configuration
 st.set_page_config(page_title="Social Media Content Generator", page_icon="📅", layout="wide")
@@ -46,17 +46,31 @@ def call_deepseek_api(messages):
         "max_tokens": 2000
     }
     
+    response = None
     try:
         response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
-        response.raise_for_status()  # Raise an exception for bad status codes
+        response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        if response.status_code == 401:
-            raise Exception("API key authentication failed. Please check your API key.")
-        elif response.status_code == 404:
-            raise Exception("Invalid API endpoint. Please check the API URL.")
+    except requests.exceptions.HTTPError as e:
+        error_msg = ""
+        if response is not None:
+            if response.status_code == 401:
+                error_msg = "API key authentication failed. Please check your API key."
+            elif response.status_code == 404:
+                error_msg = "Invalid API endpoint. Please check the API URL."
+            else:
+                try:
+                    error_data = response.json()
+                    error_msg = f"API error: {error_data.get('error', {}).get('message', str(e))}"
+                except:
+                    error_msg = f"HTTP error occurred: {str(e)}"
         else:
-            raise Exception(f"API call failed: {str(e)}\nResponse: {response.text if response else 'No response'}")
+            error_msg = f"Failed to get response from API: {str(e)}"
+        raise Exception(error_msg)
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Request failed: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Unexpected error: {str(e)}")
 
 def generate_content(prompt, platform, num_posts):
     """Generate social media content using Deepseek API."""
