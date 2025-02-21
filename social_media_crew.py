@@ -5,18 +5,32 @@ from datetime import datetime, timedelta
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# Deepinfra API Configuration
-DEEPINFRA_API_KEY = "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"
-DEEPINFRA_API_URL = "https://api.deepinfra.com/v1/openai/chat/completions"
+# OpenRouter API Configuration
+OPENROUTER_API_KEY = "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"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Initialize Streamlit configuration
 st.set_page_config(page_title="Social Media Content Generator", page_icon="📅", layout="wide")
 st.title("📅 Social Media Content Generator")
 st.markdown("Generate engaging social media content for your platform.")
 
+# Model selection
+available_models = {
+    "Claude 3 Opus": "anthropic/claude-3-opus",
+    "Claude 3 Sonnet": "anthropic/claude-3-sonnet",
+    "GPT-4 Turbo": "openai/gpt-4-turbo-preview",
+    "Llama 2 70B": "meta-llama/llama-2-70b-chat",
+    "Mixtral 8x7B": "mistralai/mixtral-8x7b",
+}
+
 # Sidebar configuration
 with st.sidebar:
     st.header("⚙️ Settings")
+    selected_model = st.selectbox(
+        "Select Model",
+        list(available_models.keys()),
+        help="Choose the AI model to use"
+    )
     custom_prompt = st.text_area(
         "Custom Prompt",
         value="Create engaging social media posts for a tech startup.",
@@ -32,15 +46,17 @@ with st.sidebar:
     background_opacity = st.slider("Background Opacity", 0.0, 1.0, 0.5)
     num_posts = st.slider("Number of Posts", 1, 14, 7)
 
-def call_deepinfra_api(messages):
-    """Make API call to Deepinfra."""
+def call_openrouter_api(messages, model_name):
+    """Make API call to OpenRouter."""
     headers = {
-        "Authorization": f"Bearer {DEEPINFRA_API_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": "https://localhost:8501",  # Required by OpenRouter
+        "X-Title": "Social Media Content Generator",  # Optional but recommended
         "Content-Type": "application/json"
     }
     
     data = {
-        "model": "meta-llama/Llama-2-70b-chat-hf",  # Using Llama 2 model
+        "model": available_models[model_name],
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 2000
@@ -48,7 +64,7 @@ def call_deepinfra_api(messages):
     
     response = None
     try:
-        response = requests.post(DEEPINFRA_API_URL, headers=headers, json=data)
+        response = requests.post(OPENROUTER_API_URL, headers=headers, json=data)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as e:
@@ -72,8 +88,8 @@ def call_deepinfra_api(messages):
     except Exception as e:
         raise Exception(f"Unexpected error: {str(e)}")
 
-def generate_content(prompt, platform, num_posts):
-    """Generate social media content using Deepinfra API."""
+def generate_content(prompt, platform, num_posts, model_name):
+    """Generate social media content using OpenRouter API."""
     dates = [datetime.now() + timedelta(days=i) for i in range(num_posts)]
     date_strings = [d.strftime('%Y-%m-%d') for d in dates]
     
@@ -102,7 +118,7 @@ def generate_content(prompt, platform, num_posts):
     ]
     
     try:
-        response = call_deepinfra_api(messages)
+        response = call_openrouter_api(messages, model_name)
         content = response['choices'][0]['message']['content']
         return json.loads(content)
     except Exception as e:
@@ -124,7 +140,7 @@ if st.button("Generate Content"):
     with st.spinner("Generating content..."):
         try:
             # Generate content
-            posts = generate_content(custom_prompt, platform, num_posts)
+            posts = generate_content(custom_prompt, platform, num_posts, selected_model)
             
             if posts:
                 st.success("Content generated successfully!")
